@@ -1,0 +1,2 @@
+# https://pypi.org/project/pyserum/
+pyserum==0.5.0a0
