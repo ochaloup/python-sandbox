@@ -193,28 +193,48 @@ except StopIteration:
 print(f'Token account publickey to be used for placing orders: {spl_token_pubkey}')
 
 
-# when no open order account exists, it's created
-# payer is the SPL token account that will place the token amount at exchange
-# owner is the wallet that can confirm/sing the token placingad
-print(f"Placing '{placing_side_as_str}' order at '{market_info.name} for SPL account '{token_name}/{spl_token_pubkey}' of owner '{keypair.public_key}'")
-client_id = generate_monotonic_client_id()
-market.place_order(
-    payer=spl_token_pubkey,
-    owner=keypair,
-    side=placing_side,
-    order_type=OrderType.LIMIT,
-    limit_price=79.5,
-    max_quantity=0.1,  # minimum quantity for SOL/USDC is 0.1
-    client_id=client_id,
-    opts=TxOpts(skip_confirmation=False),
-)
-# ^^^^^^^^^^^^^
-# Common errors: https://docs.projectserum.com/serum-ecosystem/help#common-error-messages
-# Program XXX failed: invalid program argument  :: some errorneus argument in place order command, e.g. 'Price must be an increment of X' for SOL/USDC it's 0.1
-# Custom program error: 0x22" :: Insufficient Funds, doesn't have enough tokens to do the trade
-# Invalid payer account. Cannot use unwrapped SOL  :: When working with SOL it's necessary to used wSOL (wrapped variant of native SOL)
+try:
+    # when no open order account exists, it's created
+    # payer is the SPL token account that will place the token amount at exchange
+    # owner is the wallet that can confirm/sing the token placingad
+    print(f"Placing '{placing_side_as_str}' order at '{market_info.name} for SPL account '{token_name}/{spl_token_pubkey}' of owner '{keypair.public_key}'")
+    client_id = generate_monotonic_client_id()
+    place_order_txn = market.place_order(
+        payer=spl_token_pubkey,
+        owner=keypair,
+        side=placing_side,
+        order_type=OrderType.LIMIT,
+        limit_price=78.0,
+        max_quantity=0.1,  # minimum quantity for SOL/USDC is 0.1
+        client_id=client_id,
+        opts=TxOpts(skip_confirmation=False),
+    )
+    print(f'Transaction {place_order_txn} sucessfully placed {placing_side_as_str} order for {market_info.name}')
+    # ^^^^^^^^^^^^^
+    # Common errors: https://docs.projectserum.com/serum-ecosystem/help#common-error-messages
+    # Program XXX failed: invalid program argument  :: some errorneus argument in place order command, e.g. 'Price must be an increment of X' for SOL/USDC it's 0.1
+    # Custom program error: 0x22" :: Insufficient Funds, doesn't have enough tokens to do the trade
+    # Invalid payer account. Cannot use unwrapped SOL  :: When working with SOL it's necessary to used wSOL (wrapped variant of native SOL)
+except Exception as e:
+    print(f'Cannot place order "{placing_side_as_str}" as an error occured: {e} ({type(e)})')
 
 print(f"Loading Open Orders Account for owner public key: {keypair.public_key}")
 open_orders_accounts: List[OpenOrdersAccount] = market.find_open_orders_accounts_for_owner(owner_address=keypair.public_key)
 print(f'Open orders: {open_orders_accounts}')
+if len(open_orders_accounts) > 0:
+    open_order_account = open_orders_accounts[0]
+    print(
+        f'Open order index[0]: '
+        f' address: {open_order_account.address}\n'
+        f' market: {open_order_account.market}\n'
+        f' owner: {open_order_account.owner}\n'
+        f' base_token_free: {open_order_account.base_token_free}\n'
+        f' base_token_total: {open_order_account.base_token_total}\n'
+        f' quote_token_free: {open_order_account.quote_token_free}\n'
+        f' quote_token_total: {open_order_account.quote_token_total}\n'
+        f' free_slot_bits: {open_order_account.free_slot_bits}\n'
+        f' is_bid_bits: {open_order_account.is_bid_bits}\n'
+        f' orders: {open_order_account.orders}\n'
+        f' client_ids: {open_order_account.client_ids}'
+        )
 
