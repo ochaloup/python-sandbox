@@ -6,6 +6,7 @@ from json import load as json_load_file, loads as json_load, dumps as json_dumps
 from os import path
 from pathlib import Path
 from pydoc import cli
+import typing
 from pyserum import instructions
 from pyserum.connection import get_live_markets
 from pyserum.connection import conn
@@ -20,9 +21,10 @@ from solana.publickey import PublicKey
 from solana.rpc.api import Client
 from solana.rpc.commitment import Finalized
 from solana.rpc.core import UnconfirmedTxError
-from solana.rpc.types import TxOpts, TokenAccountOpts
+from solana.rpc.types import TxOpts, TokenAccountOpts, RPCResponse
 from spl.token.client import Token
 from spl.token.constants import TOKEN_PROGRAM_ID
+from solana.transaction import Transaction
 from tomlkit import key
 from time import time_ns
 from typing import List, NamedTuple
@@ -134,11 +136,12 @@ def generate_monotonic_client_id(last_generated_id: int = None) -> int:
         id_next += 1
     return id_next
 
-def print_open_orders(pubkey: PublicKey) -> None:
-    print(f"Loading Orders Account for owner public key: {pubkey}")
-    owner_orders = market.load_orders_for_owner(keypair.public_key)
-    print(f'Owner orders: {owner_orders}')
+def print_open_orders(pubkey: PublicKey) -> typing.List[PublicKey]:
+    print(f"Loading (Open)Orders Account for owner public key: {pubkey}")
+    # owner_orders = market.load_orders_for_owner(keypair.public_key)
+    # print(f'Owner orders: {owner_orders}')
     open_orders_accounts: List[OpenOrdersAccount] = market.find_open_orders_accounts_for_owner(owner_address=pubkey)
+    open_orders_pubkeys: typing.List[PublicKey] = []
     print(f'Open orders: {open_orders_accounts}')
     if open_orders_accounts:
         counter = 0
@@ -157,30 +160,35 @@ def print_open_orders(pubkey: PublicKey) -> None:
                 f' orders: {open_order_account.orders}\n'
                 # f' client_ids: {open_order_account.client_ids}'
                 )
+            open_orders_pubkeys.append(open_order_account.address)
             counter += 1
+    return open_orders_pubkeys
 
 # taking from pyserum upstream master
-class CloseOpenOrdersParams(NamedTuple):
-    """Close Open Orders."""
-    open_orders: PublicKey
-    """"""
-    owner: PublicKey
-    """"""
-    sol_wallet: PublicKey
-    """"""
-    market: PublicKey
-    """"""
-    program_id: PublicKey = instructions.DEFAULT_DEX_PROGRAM_ID
-    """"""
+def _get_close_open_orders_txn(market_pubkey: PublicKey, owner_pubkey: PublicKey, open_orders_pubkey: PublicKey) -> TransactionInstruction:
+    close_params = instructions.CloseOpenOrdersParams(
+        open_orders=open_orders_pubkey,
+        owner=owner_pubkey,
+        sol_wallet=owner_pubkey,
+        market=market_pubkey,
+    )
+    close_instructions = instructions.close_open_orders(close_params)
+    return Transaction().add(close_instructions)
 
-    def get_close_open_orders_txn(self, market_pubkey: PublicKey, owner_pubkey: PublicKey, open_orders_pubkey: PublicKey) -> TransactionInstruction:
-        close = CloseOpenOrdersParams(
-            open_orders=open_orders_pubkey,
-            owner=owner_pubkey,
-            sol_wallet=owner_pubkey,
-            market=market_pubkey,
-        )
-        return Transaction().add(cancel_order_v2_instructions)
+# Only accounts with no funds associated with them can be closed. :-/
+def close_open_orders(
+    rpc_connection: Client,
+    owner: Keypair,
+    market_pubkey: PublicKey,
+    open_orders_pubkey: PublicKey,
+    opts: TxOpts = TxOpts()
+) -> RPCResponse:
+    txs = _get_close_open_orders_txn(
+        market_pubkey=market_pubkey,
+        owner_pubkey=owner.public_key,
+        open_orders_pubkey=open_orders_pubkey
+    )
+    return rpc_connection.send_transaction(txs, owner, opts=opts)
 
 # TODO: make main :-)
 ######################### MAIN #########################
@@ -199,8 +207,14 @@ rpc_connection: Client = conn(endpoint=args.url, timeout=30)
 print(f"Loading markets for {market_info.name} :: {market_info.address}")
 market: Market = Market.load(rpc_connection, market_info.address)
 
-print_open_orders(keypair.public_key)
-quit()
+# Closing open orders is possible only when no funds are deposited there
+# open_orders = print_open_orders(keypair.public_key)
+# if len(open_orders) > 0:
+#     open_order_address = open_orders[0]
+#     print(f'Closing open orders address {open_order_address}')
+#     close_open_orders(rpc_connection, keypair, market_info.address, open_order_address)
+#     print_open_orders(keypair.public_key)
+# quit()
 
 print(f"Loading existing token mint addresses in Solana ecosystem")
 solana_existing_tokens = load_token_list()

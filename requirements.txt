@@ -1,2 +1,2 @@
 # https://pypi.org/project/pyserum/
-git+https://github.com/serum-community/pyserum@master
+git+https://github.com/serum-community/pyserum@alpha
