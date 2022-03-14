@@ -6,6 +6,7 @@ from json import load as json_load_file, loads as json_load, dumps as json_dumps
 from os import path
 from pathlib import Path
 from pydoc import cli
+from pyserum import instructions
 from pyserum.connection import get_live_markets
 from pyserum.connection import conn
 from pyserum.market import Market
@@ -13,6 +14,7 @@ from pyserum.market.types import MarketInfo
 from pyserum.open_orders_account import OpenOrdersAccount
 from pyserum.enums import OrderType, Side
 from requests import Session
+from solana.transaction import TransactionInstruction
 from solana.keypair import Keypair
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
@@ -23,7 +25,7 @@ from spl.token.client import Token
 from spl.token.constants import TOKEN_PROGRAM_ID
 from tomlkit import key
 from time import time_ns
-from typing import List
+from typing import List, NamedTuple
 
 TOKEN_LIST_URL = 'https://raw.githubusercontent.com/solana-labs/token-list/main/src/tokens/solana.tokenlist.json'
 
@@ -157,6 +159,28 @@ def print_open_orders(pubkey: PublicKey) -> None:
                 )
             counter += 1
 
+# taking from pyserum upstream master
+class CloseOpenOrdersParams(NamedTuple):
+    """Close Open Orders."""
+    open_orders: PublicKey
+    """"""
+    owner: PublicKey
+    """"""
+    sol_wallet: PublicKey
+    """"""
+    market: PublicKey
+    """"""
+    program_id: PublicKey = instructions.DEFAULT_DEX_PROGRAM_ID
+    """"""
+
+    def get_close_open_orders_txn(self, market_pubkey: PublicKey, owner_pubkey: PublicKey, open_orders_pubkey: PublicKey) -> TransactionInstruction:
+        close = CloseOpenOrdersParams(
+            open_orders=open_orders_pubkey,
+            owner=owner_pubkey,
+            sol_wallet=owner_pubkey,
+            market=market_pubkey,
+        )
+        return Transaction().add(cancel_order_v2_instructions)
 
 # TODO: make main :-)
 ######################### MAIN #########################
