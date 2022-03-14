@@ -139,17 +139,24 @@ market: Market = Market.load(rpc_connection, market_info.address)
 
 print(f"Loading existing token mint addresses in Solana ecosystem")
 solana_existing_tokens = load_token_list()
-(buy_token, sell_token) = tuple(args.market_name.split('/'))  # TODO: market name splitter could be maybe different
+(sell_token, buy_token) = tuple(args.market_name.split('/'))  # TODO: market name splitter could be maybe different
 if not buy_token or not sell_token:
     raise Exception(f"Cannot split market pair name {args.market_name} to two sides")
 
 placing_side = Side.BUY if Side.BUY.name == args.side else Side.SELL
 token_name = buy_token if placing_side == Side.BUY else sell_token
+
+# There is an exception - if the token is SOL we cannot use the native SOL for opening order but we need to work with the wrapped SPL token
+if token_name == 'SOL':
+    token_name = 'wSOL'
+
 token_info = next(filter(lambda token_data: token_data["symbol"] == token_name, solana_existing_tokens))
 token_mint_address = token_info['address']
-print(f"Going to {'BUY' if placing_side == Side.BUY else 'SELL'} with token {token_name} with mint address {token_mint_address}")
+placing_side_as_str = 'BUY' if placing_side == Side.BUY else 'SELL'
+print(f"Going to {placing_side_as_str} with token {token_name} with mint address {token_mint_address}")
 
-# The same data could be found when we use Solana API quote_token.get_accounts (see below)
+# # NOTE: instead of parsing the account by owner the same data could be found probably easier with Solana API
+# # check the call of the 'Token.get_accounts' below
 print(f"Loading SPL token addresses for {keypair.public_key}")
 token_opts = TokenAccountOpts(program_id=TOKEN_PROGRAM_ID, encoding="jsonParsed")
 resp = rpc_connection.get_token_accounts_by_owner(keypair.public_key, token_opts)
@@ -158,47 +165,56 @@ if 'result' not in resp or 'value' not in resp['result']:
 owning_spl_tokens = resp['result']['value']
 try:
     spl_token_info = next(filter(lambda spl_token: spl_token["account"]["data"]["parsed"]["info"]["mint"] == token_mint_address, owning_spl_tokens))
-    spl_token_address = spl_token_info["pubkey"]
+    spl_token_pubkey = PublicKey(spl_token_info["pubkey"])
 except StopIteration:
-    raise Exception(
+    print(
         f"Account {keypair.public_key} does not own token with mint address {token_mint_address}"
         f"That address is received from fact of wanting to place order for token {token_name}"
+        f"Going to create a token account here"
     )
-print(f'Token account publickey {spl_token_address}')
 
-# How to create the Token account with the Solana API (+ how to close it)
-# quote_token = Token(
-#     rpc_connection,
-#     pubkey=PublicKey(token_mint_address), # mint address of token
-#     program_id=TOKEN_PROGRAM_ID,
-#     payer=keypair,
-# )
-# accounts = quote_token.get_accounts(keypair.public_key)
-# print(f'accounts belonging to pubkey: {keypair.public_key} :: {accounts}')
-# To create a new token account
-# token_account_pubkey = quote_token.create_account(
-#   keypair.public_key,
-#   skip_confirmation=True)  # Make sure you send tokens to this address
-# quote_token.close_account(account=PublicKey(token_account_pubkey), dest=keypair.public_key, authority=keypair)
+    # Creation of the Token account with the Solana API (+ how to close it)
+    quote_token = Token(
+        rpc_connection,
+        pubkey=PublicKey(token_mint_address), # mint address of token
+        program_id=TOKEN_PROGRAM_ID,
+        payer=keypair,
+    )
+    accounts = quote_token.get_accounts(keypair.public_key)
+    print(f'accounts belonging to pubkey "{keypair.public_key}" before creation a new account: {accounts}')
+    if not accounts['result']['value']:
+        # To create a new token account
+        spl_token_pubkey = quote_token.create_account(   # Make sure you send tokens to this address
+        keypair.public_key,
+        skip_confirmation=True)
+        print(f'SPL token address for token "{token_name}" at "{spl_token_pubkey}" was created')
+        # To close the token account
+        # quote_token.close_account(account=PublicKey(token_account_pubkey), dest=keypair.public_key, authority=keypair)
+print(f'Token account publickey to be used for placing orders: {spl_token_pubkey}')
 
 
 # when no open order account exists, it's created
 # payer is the SPL token account that will place the token amount at exchange
-# owner is the wallet that can confirm/sing the token placing
-print(f"Placing order for SPL token account {spl_token_address} of owner {keypair.public_key}")
+# owner is the wallet that can confirm/sing the token placingad
+print(f"Placing '{placing_side_as_str}' order at '{market_info.name} for SPL account '{token_name}/{spl_token_pubkey}' of owner '{keypair.public_key}'")
 client_id = generate_monotonic_client_id()
 market.place_order(
-    payer=PublicKey(spl_token_address),
+    payer=spl_token_pubkey,
     owner=keypair,
-    side=Side.BUY,
+    side=placing_side,
     order_type=OrderType.LIMIT,
-    limit_price=100.0,
-    max_quantity=0.001,
+    limit_price=79.5,
+    max_quantity=0.1,  # minimum quantity for SOL/USDC is 0.1
     client_id=client_id,
     opts=TxOpts(skip_confirmation=False),
 )
+# ^^^^^^^^^^^^^
+# Common errors: https://docs.projectserum.com/serum-ecosystem/help#common-error-messages
+# Program XXX failed: invalid program argument  :: some errorneus argument in place order command, e.g. 'Price must be an increment of X' for SOL/USDC it's 0.1
+# Custom program error: 0x22" :: Insufficient Funds, doesn't have enough tokens to do the trade
+# Invalid payer account. Cannot use unwrapped SOL  :: When working with SOL it's necessary to used wSOL (wrapped variant of native SOL)
 
 print(f"Loading Open Orders Account for owner public key: {keypair.public_key}")
 open_orders_accounts: List[OpenOrdersAccount] = market.find_open_orders_accounts_for_owner(owner_address=keypair.public_key)
-print(f'{open_orders_accounts}')
+print(f'Open orders: {open_orders_accounts}')
 

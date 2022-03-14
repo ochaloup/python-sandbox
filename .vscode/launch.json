@@ -21,7 +21,7 @@
                 "-k",
                 "/home/chalda/my-testing/solana-wallet/oncha-test-wallet.json",
                 "-s",
-                "BUY"
+                "SELL"
             ]
         },
     ]
