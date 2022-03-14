@@ -5,6 +5,7 @@ from http import client
 from json import load as json_load_file, loads as json_load, dumps as json_dumps
 from os import path
 from pathlib import Path
+from pydoc import cli
 from pyserum.connection import get_live_markets
 from pyserum.connection import conn
 from pyserum.market import Market
@@ -13,12 +14,16 @@ from pyserum.open_orders_account import OpenOrdersAccount
 from pyserum.enums import OrderType, Side
 from requests import Session
 from solana.keypair import Keypair
+from solana.publickey import PublicKey
 from solana.rpc.api import Client
+from solana.rpc.commitment import Finalized
 from solana.rpc.types import TxOpts, TokenAccountOpts
+from spl.token.client import Token
+from spl.token.constants import TOKEN_PROGRAM_ID
 from tomlkit import key
+from time import time_ns
 from typing import List
 
-SPL_PROGRAM_ID  = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
 TOKEN_LIST_URL = 'https://raw.githubusercontent.com/solana-labs/token-list/main/src/tokens/solana.tokenlist.json'
 
 ######################### FUNCTIONS #########################
@@ -108,6 +113,12 @@ def load_keypair_file(filename: str) -> bytes:
             data = json_load_file(key_file)
             return bytes(bytearray(data))
 
+def generate_monotonic_client_id(last_generated_id: int = None) -> int:
+    id_next: int = round(time_ns() / 1000000)
+    if last_generated_id and last_generated_id <= id_next:
+        id_next += 1
+    return id_next
+
 
 # TODO: make main :-)
 ######################### MAIN #########################
@@ -138,8 +149,9 @@ token_info = next(filter(lambda token_data: token_data["symbol"] == token_name, 
 token_mint_address = token_info['address']
 print(f"Going to {'BUY' if placing_side == Side.BUY else 'SELL'} with token {token_name} with mint address {token_mint_address}")
 
+# The same data could be found when we use Solana API quote_token.get_accounts (see below)
 print(f"Loading SPL token addresses for {keypair.public_key}")
-token_opts = TokenAccountOpts(program_id=SPL_PROGRAM_ID, encoding="jsonParsed")
+token_opts = TokenAccountOpts(program_id=TOKEN_PROGRAM_ID, encoding="jsonParsed")
 resp = rpc_connection.get_token_accounts_by_owner(keypair.public_key, token_opts)
 if 'result' not in resp or 'value' not in resp['result']:
     raise Exception(f'Getting token accounts by owner failed as no result provided: {resp}')
@@ -152,19 +164,37 @@ except StopIteration:
         f"Account {keypair.public_key} does not own token with mint address {token_mint_address}"
         f"That address is received from fact of wanting to place order for token {token_name}"
     )
-print(f'>>>>> {spl_token_address}')
+print(f'Token account publickey {spl_token_address}')
+
+# How to create the Token account with the Solana API (+ how to close it)
+# quote_token = Token(
+#     rpc_connection,
+#     pubkey=PublicKey(token_mint_address), # mint address of token
+#     program_id=TOKEN_PROGRAM_ID,
+#     payer=keypair,
+# )
+# accounts = quote_token.get_accounts(keypair.public_key)
+# print(f'accounts belonging to pubkey: {keypair.public_key} :: {accounts}')
+# To create a new token account
+# token_account_pubkey = quote_token.create_account(
+#   keypair.public_key,
+#   skip_confirmation=True)  # Make sure you send tokens to this address
+# quote_token.close_account(account=PublicKey(token_account_pubkey), dest=keypair.public_key, authority=keypair)
+
 
 # when no open order account exists, it's created
 # payer is the SPL token account that will place the token amount at exchange
 # owner is the wallet that can confirm/sing the token placing
-print(f"Placing order for public key: {keypair.public_key}")
+print(f"Placing order for SPL token account {spl_token_address} of owner {keypair.public_key}")
+client_id = generate_monotonic_client_id()
 market.place_order(
-    payer=spl_token_address,
+    payer=PublicKey(spl_token_address),
     owner=keypair,
     side=Side.BUY,
     order_type=OrderType.LIMIT,
     limit_price=100.0,
     max_quantity=0.001,
+    client_id=client_id,
     opts=TxOpts(skip_confirmation=False),
 )
 

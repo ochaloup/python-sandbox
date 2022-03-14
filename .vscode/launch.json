@@ -19,7 +19,9 @@
             "console": "integratedTerminal",
             "args": [
                 "-k",
-                "/home/chalda/my-testing/solana-wallet/oncha-test-wallet.json"
+                "/home/chalda/my-testing/solana-wallet/oncha-test-wallet.json",
+                "-s",
+                "BUY"
             ]
         },
     ]
