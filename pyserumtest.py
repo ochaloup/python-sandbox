@@ -59,6 +59,18 @@ def get_args() -> Namespace:
         help="RPC connection URL (consider https://api.mainnet-beta.solana.com/ or https://mango.rpcpool.com/946ef7337da3f5b8d3e4a34e7f88)",
         default="https://mango.rpcpool.com/946ef7337da3f5b8d3e4a34e7f88"
     )
+    parser.add_argument(
+        "-p",
+        "--price",
+        type=float,
+        help="Limit price for placing order on Serum"
+    )
+    parser.add_argument(
+        "-q",
+        "--quantity",
+        type=float,
+        help="Max quantity for placing order on Serum"
+    )
     return parser.parse_args()
 
 
@@ -120,6 +132,31 @@ def generate_monotonic_client_id(last_generated_id: int = None) -> int:
         id_next += 1
     return id_next
 
+def print_open_orders(pubkey: PublicKey) -> None:
+    print(f"Loading Orders Account for owner public key: {pubkey}")
+    owner_orders = market.load_orders_for_owner(keypair.public_key)
+    print(f'Owner orders: {owner_orders}')
+    open_orders_accounts: List[OpenOrdersAccount] = market.find_open_orders_accounts_for_owner(owner_address=pubkey)
+    print(f'Open orders: {open_orders_accounts}')
+    if open_orders_accounts:
+        counter = 0
+        for open_order_account in open_orders_accounts:
+            print(
+                f'Open order index[{counter}]: '
+                f' address: {open_order_account.address}\n'
+                f' market: {open_order_account.market}\n'
+                f' owner: {open_order_account.owner}\n'
+                f' base_token_free: {open_order_account.base_token_free}\n'
+                f' base_token_total: {open_order_account.base_token_total}\n'
+                f' quote_token_free: {open_order_account.quote_token_free}\n'
+                f' quote_token_total: {open_order_account.quote_token_total}\n'
+                f' free_slot_bits: {open_order_account.free_slot_bits}\n'
+                f' is_bid_bits: {open_order_account.is_bid_bits}\n'
+                f' orders: {open_order_account.orders}\n'
+                # f' client_ids: {open_order_account.client_ids}'
+                )
+            counter += 1
+
 
 # TODO: make main :-)
 ######################### MAIN #########################
@@ -137,6 +174,9 @@ rpc_connection: Client = conn(endpoint=args.url, timeout=30)
 # Load the given market
 print(f"Loading markets for {market_info.name} :: {market_info.address}")
 market: Market = Market.load(rpc_connection, market_info.address)
+
+print_open_orders(keypair.public_key)
+quit()
 
 print(f"Loading existing token mint addresses in Solana ecosystem")
 solana_existing_tokens = load_token_list()
@@ -199,15 +239,17 @@ for x in range(0, 4):
         # when no open order account exists, it's created
         # payer is the SPL token account that will place the token amount at exchange
         # owner is the wallet that can confirm/sing the token placingad
-        print(f"Placing '{placing_side_as_str}' order at '{market_info.name} for SPL account '{token_name}/{spl_token_pubkey}' of owner '{keypair.public_key}'")
+        print(
+            f"Placing '{placing_side_as_str}' order at '{market_info.name}' limit_price='{args.price}'/max_quanity='{args.quantity}' "
+            f"for SPL account '{token_name}/{spl_token_pubkey}' of owner '{keypair.public_key}'")
         client_id = generate_monotonic_client_id()
         place_order_txn = market.place_order(
             payer=spl_token_pubkey,
             owner=keypair,
             side=placing_side,
             order_type=OrderType.LIMIT,
-            limit_price=78.0,
-            max_quantity=0.1,  # minimum quantity for SOL/USDC is 0.1
+            limit_price=args.price,
+            max_quantity=args.quantity,  # minimum quantity for SOL/USDC is 0.1
             client_id=client_id,
             opts=TxOpts(skip_confirmation=False),
         )
@@ -219,27 +261,7 @@ for x in range(0, 4):
         # Custom program error: 0x22" :: Insufficient Funds, doesn't have enough tokens to do the trade
         # Invalid payer account. Cannot use unwrapped SOL  :: When working with SOL it's necessary to used wSOL (wrapped variant of native SOL)
     except Exception as e:
-        print(f'Cannot place order "{placing_side_as_str}" as an error occured: {e} ({type(e)})')
+        print(f'[ERROR] Cannot place order "{placing_side_as_str}" as an error occured: {e} ({type(e)})')
 
+print_open_orders(keypair.public_key)
 
-print(f"Loading Open Orders Account for owner public key: {keypair.public_key}")
-open_orders_accounts: List[OpenOrdersAccount] = market.find_open_orders_accounts_for_owner(owner_address=keypair.public_key)
-print(f'Open orders: {open_orders_accounts}')
-if open_orders_accounts:
-    counter = 0
-    for open_order_account in open_orders_accounts:
-        print(
-            f'Open order index[{counter}]: '
-            f' address: {open_order_account.address}\n'
-            f' market: {open_order_account.market}\n'
-            f' owner: {open_order_account.owner}\n'
-            f' base_token_free: {open_order_account.base_token_free}\n'
-            f' base_token_total: {open_order_account.base_token_total}\n'
-            f' quote_token_free: {open_order_account.quote_token_free}\n'
-            f' quote_token_total: {open_order_account.quote_token_total}\n'
-            f' free_slot_bits: {open_order_account.free_slot_bits}\n'
-            f' is_bid_bits: {open_order_account.is_bid_bits}\n'
-            f' orders: {open_order_account.orders}\n'
-            # f' client_ids: {open_order_account.client_ids}'
-            )
-        counter += 1
