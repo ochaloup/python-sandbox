@@ -48,6 +48,9 @@ def get_args() -> Namespace:
         help="Market name as pair name (see https://raw.githubusercontent.com/project-serum/serum-ts/master/packages/serum/src/markets.json)",
         default="SOL/USDC"
     )
+    # BUY/SELL direction at SPOT market
+    # BUY - buying COPE for USDC (i.e., swapping USDC to COPE, COPE <- USDC)
+    # SELL - selling COPE for USDC (i.e., swapping COPE to USDC, COPE -> USDC)
     parser.add_argument(
         "-s",
         "--side",
