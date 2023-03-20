@@ -49,12 +49,12 @@ def get_args() -> Namespace:
         default="SOL/USDC"
     )
     # BUY/SELL direction at SPOT market
-    # BUY - buying COPE for USDC (i.e., swapping USDC to COPE, COPE <- USDC)
-    # SELL - selling COPE for USDC (i.e., swapping COPE to USDC, COPE -> USDC)
+    # BUY - buying SOL for USDC (i.e., swapping USDC to SOL, SOL <- USDC)
+    # SELL - selling SOL for USDC (i.e., swapping SOL to USDC, SOL -> USDC)
     parser.add_argument(
         "-s",
         "--side",
-         type=str.upper, 
+         type=str.upper,
          default="SELL",
          choices=["BUY", "SELL"],
          help="Placing order to what side: BUY or SELL"
@@ -211,13 +211,13 @@ print(f"Loading markets for {market_info.name} :: {market_info.address}")
 market: Market = Market.load(rpc_connection, market_info.address)
 
 # Closing open orders is possible only when no funds are deposited there
-# open_orders = print_open_orders(keypair.public_key)
-# if len(open_orders) > 0:
-#     open_order_address = open_orders[0]
-#     print(f'Closing open orders address {open_order_address}')
-#     close_open_orders(rpc_connection, keypair, market_info.address, open_order_address)
-#     print_open_orders(keypair.public_key)
-# quit()
+open_orders = print_open_orders(keypair.public_key)
+if len(open_orders) > 0:
+    open_order_address = open_orders[0]
+    print(f'Closing open orders address {open_order_address}')
+    close_open_orders(rpc_connection, keypair, market_info.address, open_order_address)
+    print_open_orders(keypair.public_key)
+quit()
 
 print(f"Loading existing token mint addresses in Solana ecosystem")
 solana_existing_tokens = load_token_list()
